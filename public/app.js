@@ -703,11 +703,19 @@ function statusText(d) {
 function paintArrival(d) {
   const [clock] = splitArrival(TARGET_MS);
   if (els.eleven && els.eleven.textContent !== clock) els.eleven.textContent = clock;
-  if (els.flight && !PREVIEW) {
-    const line = statusText(d);
-    if (els.flight.textContent !== line) els.flight.textContent = line;
-    els.flight.classList.add('show');
+  if (!els.flight || PREVIEW) return;
+
+  /* No key configured is a deployment state, not something to report on a page
+     people are watching — leave it looking exactly as it did before. A key that
+     exists but is failing is worth saying out loud. */
+  if (d?.reason === 'no_api_key') {
+    els.flight.classList.remove('show');
+    return;
   }
+
+  const line = statusText(d);
+  if (els.flight.textContent !== line) els.flight.textContent = line;
+  els.flight.classList.add('show');
 }
 
 function setTarget(nextMs, d) {
