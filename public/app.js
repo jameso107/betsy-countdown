@@ -1,7 +1,7 @@
-/* Craig & Betsy — a countdown to 11:11 PM ET, Saturday August 1 2026.
+/* Craig & Betsy — a countdown to 12:26 AM ET, Sunday August 2 2026.
    Stored as a fixed UTC instant so the clock is correct from any timezone. */
 
-const REAL_TARGET_MS = Date.UTC(2026, 7, 2, 3, 11, 0); // 2026-08-02T03:11:00Z
+const REAL_TARGET_MS = Date.UTC(2026, 7, 2, 4, 26, 0); // 2026-08-02T04:26:00Z
 
 /* ?preview=20 rehearses the ending twenty seconds from now. */
 const previewIn = Number(new URLSearchParams(location.search).get('preview'));
@@ -283,7 +283,7 @@ class Photos {
     });
   }
 
-  /* Stacks 11:11, the photo grid and the names into one vertically centred
+  /* Stacks the arrival time, the photo grid and the names into one vertically centred
      block, so the time is never hidden behind a photo. Returns the y the
      photo grid should start at, relative to the viewport centre. */
   compose(gridH, vmin) {

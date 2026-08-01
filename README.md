@@ -1,6 +1,6 @@
 # betsy-countdown
 
-A cinematic countdown to **11:11 PM Eastern, Saturday August 1 2026** — for Craig & Betsy.
+A cinematic countdown to **12:26 AM Eastern, Sunday August 2 2026** — for Craig & Betsy.
 
 Live: https://betsy-countdown.vercel.app
 
@@ -17,7 +17,7 @@ git add public/photos && git commit -m "add photos" && git push
 Vercel regenerates the manifest on every build — there is no list of filenames to maintain.
 
 The photos drift in the starfield the entire time and are slowly pulled **toward each other** as the
-clock runs down. At 11:11 they come together in the centre, then settle side by side.
+clock runs down. At 12:26 they come together in the centre, then settle side by side.
 
 **Click or tap any photo** to spotlight it full-screen. Tap it again, tap the backdrop, or press
 Escape to put it back.
@@ -61,5 +61,8 @@ One line, [`public/app.js`](public/app.js) — stored as a fixed UTC instant so 
 correctly from any timezone.
 
 ```js
-const TARGET_MS = Date.UTC(2026, 7, 2, 3, 11, 0); // 11:11 PM EDT, Sat Aug 1 2026
+const REAL_TARGET_MS = Date.UTC(2026, 7, 2, 4, 26, 0); // 12:26 AM EDT, Sun Aug 2 2026
 ```
+
+The matching `#eleven` element in [`public/index.html`](public/index.html) prints the time that
+lands when the clock hits zero — change it to match.

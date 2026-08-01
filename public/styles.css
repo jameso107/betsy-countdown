@@ -100,7 +100,7 @@ body.spotlit .photos { z-index: 6; }
 
 /* ---------- centre stage ---------- */
 
-/* Clock, 11:11 and names are all absolutely centred and offset by CSS vars
+/* Clock, arrival time and names are all absolutely centred and offset by CSS vars
    that app.js computes, so nothing reflows when the finale rearranges. */
 .stage {
   position: fixed; inset: 0;
@@ -166,7 +166,7 @@ body.spotlit .photos { z-index: 6; }
 
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .42 } }
 
-/* The 11:11 that lands when the countdown completes */
+/* The arrival time that lands when the countdown completes */
 .eleven {
   position: absolute;
   top: 50%; left: 50%;
