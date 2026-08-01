@@ -72,8 +72,15 @@ real time — `https://betsy-countdown.vercel.app/?preview=5`. Remove it for the
 G4 537 is now expected, and normalises the answer. The page polls it every 15 minutes, on becoming
 visible again, and whenever the network comes back.
 
-**It needs an API key to go live.** Set exactly one of these in the Vercel project
-(Settings → Environment Variables), then redeploy:
+**No account or API key is required.** By default it reads FlightAware's public
+tracking page for the flight, which carries the scheduled, estimated and actual gate times in an
+embedded `trackpollBootstrap` blob. `robots.txt` allows `/live/flight/<ident>` — only
+`/live/flight/id/` is disallowed — and the edge cache holds it to roughly one request every five
+minutes, with a User-Agent that says what it is.
+
+That is a public web page, not a supported API, so treat it as best-effort: FlightAware can change
+the markup or block us at any time. Nothing breaks if they do — see below — but for something
+durable, set one of these keys instead and it takes precedence automatically:
 
 | Variable | Provider | Notes |
 | --- | --- | --- |
@@ -81,21 +88,28 @@ visible again, and whenever the network comes back.
 | `AVIATIONSTACK_KEY` | [Aviationstack](https://aviationstack.com/) | Free tier is ~100 calls/month — thin, but enough for one night |
 | `AIRLABS_KEY` | [AirLabs](https://airlabs.co/docs/flight) | |
 
+Set `DISABLE_FLIGHTAWARE=1` to turn the keyless path off entirely.
+
 Optional:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `FLIGHT_NUMBER` | `G4537` | IATA flight code, no space |
-| `FLIGHT_ARRIVAL_IATA` | *(unset)* | Destination filter, e.g. `GRR`. Worth setting — G4 537 is flown on several routes, so the number alone can match more than one leg |
+| `FLIGHT_ARRIVAL_IATA` | `GRR` | Destination filter — G4 537 is flown on several routes, so the number alone can match more than one leg. A leg elsewhere is used only if nothing matches |
+| `FLIGHT_TRACK_IDENT` | derived (`AAY537`) | ICAO ident for the keyless lookup |
 | `FLIGHT_TZ` | `America/New_York` | Timezone the arrival date is resolved in |
-| `FALLBACK_ARRIVAL_ISO` | `2026-08-02T04:26:00Z` | Used when no live answer is available |
+| `FALLBACK_ARRIVAL_ISO` | `2026-08-02T04:54:00Z` | Used when no live answer is available |
+
+Times come from **gate arrival**, not wheels-down: it's the published schedule, so it's both what
+"late" is measured against and the moment you actually see her.
 
 ### When the data isn't there
 
-The countdown never blanks or breaks. With no key, a provider outage, or no matching flight, the
-function still answers `200` with the fallback time and `ok: false`, and the page keeps counting to
-the last live time it saw — cached in `localStorage`, so it survives a reload on a dead network. The
-status line says `live updates unavailable` when the time on screen isn't fresh.
+The countdown never blanks or breaks. If the source is blocked, changes shape, or returns no
+matching flight, the function still answers `200` with the fallback time and `ok: false`, and the
+page keeps counting to the last live time it saw — cached in `localStorage`, so it survives a reload
+on a dead network. Only a genuinely live answer is allowed to move the clock. The status line says
+`live updates unavailable` when what's on screen isn't fresh.
 
 Responses are cached at the edge for 5 minutes (60s for failures), so a hundred open tabs cost one
 upstream call, not a hundred — free tiers are metered in the low hundreds per month.

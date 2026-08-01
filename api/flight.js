@@ -9,9 +9,11 @@
  * every failure path falls back to the last known good time instead. */
 
 const FLIGHT = (process.env.FLIGHT_NUMBER || 'G4537').toUpperCase().replace(/[^A-Z0-9]/g, '');
-const ARR_IATA = (process.env.FLIGHT_ARRIVAL_IATA || '').toUpperCase();
+// G4 537 is flown on several routes, so pin the one being waited on. A leg to
+// anywhere else is only ever used if nothing matches this.
+const ARR_IATA = (process.env.FLIGHT_ARRIVAL_IATA || 'GRR').toUpperCase();
 const TZ = process.env.FLIGHT_TZ || 'America/New_York';
-const FALLBACK_ISO = process.env.FALLBACK_ARRIVAL_ISO || '2026-08-02T04:26:00Z';
+const FALLBACK_ISO = process.env.FALLBACK_ARRIVAL_ISO || '2026-08-02T04:54:00Z';
 
 // How long the edge serves a cached answer, and how long a stale one may be
 // re-served while a fresh fetch happens behind it.
@@ -117,14 +119,92 @@ async function airlabs(key) {
   }];
 }
 
-/* First configured provider wins, so a spare key can sit in the project
-   without changing behaviour. */
+/* ------------------------------------------------- keyless: flightaware ---
+ *
+ * Every provider above needs an account. This one doesn't: FlightAware's
+ * public tracking page embeds the times we need in a `trackpollBootstrap`
+ * blob, and robots.txt allows /live/flight/<ident> (only /live/flight/id/ is
+ * disallowed). Used as the default so the countdown works with no setup.
+ *
+ * It is a public web page rather than a supported API, so treat it as
+ * best-effort: request at most once per FRESH_S, identify ourselves honestly,
+ * and fall through to the cached time if the shape ever changes. */
+
+const ICAO_PREFIX = { G4: 'AAY' }; // IATA airline code -> ICAO callsign prefix
+
+function trackIdent() {
+  if (process.env.FLIGHT_TRACK_IDENT) return process.env.FLIGHT_TRACK_IDENT.toUpperCase();
+  const m = /^([A-Z]{1,3}?\d?)(\d{1,4})$/.exec(FLIGHT);
+  return m && ICAO_PREFIX[m[1]] ? `${ICAO_PREFIX[m[1]]}${m[2]}` : FLIGHT;
+}
+
+/* Pulls one balanced {...} starting at `from`, ignoring braces inside strings. */
+function balancedObject(s, from) {
+  const start = s.indexOf('{', from);
+  if (start < 0) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\') { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return s.slice(start, i + 1);
+  }
+  return null;
+}
+
+async function flightaware() {
+  const ident = trackIdent();
+  const r = await fetch(`https://www.flightaware.com/live/flight/${encodeURIComponent(ident)}`, {
+    headers: {
+      // Identify the page this is for rather than pretending to be a browser.
+      'User-Agent': 'betsy-countdown/1.0 (personal arrival countdown; 1 request per 5 min)',
+      'Accept': 'text/html',
+      'Accept-Language': 'en-US,en;q=0.9'
+    }
+  });
+  if (!r.ok) throw new Error(`flightaware ${r.status}`);
+
+  const html = await r.text();
+  const at = html.indexOf('trackpollBootstrap');
+  if (at < 0) throw new Error('flightaware: no bootstrap');
+  const raw = balancedObject(html, at);
+  if (!raw) throw new Error('flightaware: unbalanced bootstrap');
+
+  const flights = JSON.parse(raw).flights || {};
+  return Object.values(flights).flatMap(f => {
+    /* Gate arrival is the published schedule, so it is both what "late" is
+       measured against and the moment someone waiting actually sees her. */
+    const t = (f.gateArrivalTimes?.scheduled || f.gateArrivalTimes?.estimated)
+      ? f.gateArrivalTimes : f.landingTimes;
+    if (!t) return [];
+    const actual = ms(t.actual);
+    const est = ms(t.estimated);
+    const sched = ms(t.scheduled);
+    const arrivalMs = actual ?? est ?? sched;
+    if (arrivalMs == null) return [];
+    return [{
+      arrivalMs,
+      scheduledMs: sched,
+      kind: actual ? 'actual' : est && est !== sched ? 'revised' : 'scheduled',
+      status: f.flightStatus || null,
+      from: f.origin?.iata || f.origin?.icao || null,
+      to: f.destination?.iata || f.destination?.icao || null
+    }];
+  });
+}
+
+/* A configured key wins; otherwise fall back to the keyless source so the
+   countdown works with no setup at all. */
 function pickProvider() {
   const k = process.env;
   if (k.AERODATABOX_KEY) return { name: 'aerodatabox', run: dates => aerodatabox(k.AERODATABOX_KEY, dates) };
   if (k.AVIATIONSTACK_KEY) return { name: 'aviationstack', run: () => aviationstack(k.AVIATIONSTACK_KEY) };
   if (k.AIRLABS_KEY) return { name: 'airlabs', run: () => airlabs(k.AIRLABS_KEY) };
-  return null;
+  if (process.env.DISABLE_FLIGHTAWARE) return null;
+  return { name: 'flightaware', run: () => flightaware() };
 }
 
 /* ------------------------------------------------------------------ choose */
@@ -144,7 +224,7 @@ function pickFlight(list, now) {
 
 export default async function handler(req, res) {
   const now = Date.now();
-  const fallbackMs = ms(FALLBACK_ISO) ?? Date.UTC(2026, 7, 2, 4, 26, 0);
+  const fallbackMs = ms(FALLBACK_ISO) ?? Date.UTC(2026, 7, 2, 4, 54, 0);
 
   const answer = (code, body) => {
     // Errors stay cacheable but only briefly, so an outage recovers fast.

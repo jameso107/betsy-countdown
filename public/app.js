@@ -5,7 +5,7 @@
    from any timezone. When the flight slips, the countdown slips with it. */
 
 // Used until the first live answer arrives, and whenever one can't be had.
-const FALLBACK_TARGET_MS = Date.UTC(2026, 7, 2, 4, 26, 0); // 12:26 AM ET, Sun Aug 2 2026
+const FALLBACK_TARGET_MS = Date.UTC(2026, 7, 2, 4, 54, 0); // 12:54 AM ET, Sun Aug 2 2026
 const ARRIVAL_TZ = 'America/New_York';
 
 const FLIGHT_POLL_MS = 15 * 60 * 1000;
