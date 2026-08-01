@@ -71,11 +71,15 @@ writeFileSync(
 // Point the OpenGraph image at a real file so shared links preview nicely.
 const ogFile = list(photoDir, IMAGE).find(f => /^og\./i.test(f)) || photos[0];
 if (ogFile) {
+  // Some scrapers refuse relative og:image paths, so use an absolute URL
+  // whenever the build knows the production host.
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  const site = host ? `https://${host}` : '';
   const indexPath = join(pub, 'index.html');
   const html = readFileSync(indexPath, 'utf8');
   const next = html.replace(
     /(<meta property="og:image" content=")[^"]*(")/,
-    `$1/photos/${encodeURIComponent(ogFile)}$2`
+    `$1${site}/photos/${encodeURIComponent(ogFile)}$2`
   );
   if (next !== html) writeFileSync(indexPath, next);
 }

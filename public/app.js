@@ -172,11 +172,26 @@ class Photos {
         phase: Math.random() * Math.PI * 2,
         bobSpeed: lerp(0.28, 0.5, Math.random()),
         index: i,
-        total: n
+        total: n,
+        spot: 0,
+        spotTarget: 0,
+        revealed: false,
+        fade: 0
       };
       this.items.push(item);
 
-      const reveal = () => requestAnimationFrame(() => { fig.style.opacity = '0.82'; });
+      fig.setAttribute('role', 'button');
+      fig.setAttribute('tabindex', '0');
+      fig.setAttribute('aria-label', `Enlarge photo ${i + 1} of ${n}`);
+      fig.addEventListener('click', () => this.toggleSpot(item));
+      fig.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.toggleSpot(item);
+        }
+      });
+
+      const reveal = () => { item.revealed = true; };
       if (img.complete) reveal();
       else img.addEventListener('load', reveal, { once: true });
 
@@ -200,6 +215,23 @@ class Photos {
     this.layout();
   }
 
+  /* Spotlight — one photo at a time; tapping the lit one puts it back. */
+  toggleSpot(item) {
+    const turnOn = item.spotTarget !== 1;
+    for (const p of this.items) p.spotTarget = 0;
+    if (turnOn) item.spotTarget = 1;
+    for (const p of this.items) p.el.classList.toggle('spot', p.spotTarget === 1);
+    if (turnOn) item.el.focus?.({ preventScroll: true });
+  }
+
+  clearSpot() {
+    if (!this.items.some(p => p.spotTarget)) return;
+    for (const p of this.items) {
+      p.spotTarget = 0;
+      p.el.classList.remove('spot');
+    }
+  }
+
   /* Sizes every photo to equal visual area, then precomputes the settled
      gallery positions the finale eases into. */
   layout() {
@@ -220,6 +252,8 @@ class Photos {
       p.h = base / r;
       p.el.style.width = `${p.w.toFixed(1)}px`;
       p.el.style.height = `${p.h.toFixed(1)}px`;
+      p.lastW = p.w;
+      p.lastH = p.h;
     }
 
     // Settled arrangement: one row when there's room, otherwise a grid.
@@ -274,7 +308,7 @@ class Photos {
     if (clockEl) {
       root.style.setProperty(
         '--names-y',
-        `${(clockEl.offsetHeight / 2 + clamp(vmin * 0.05, 22, 48)).toFixed(1)}px`
+        `${(clockEl.offsetHeight / 2 + clamp(vmin * 0.06, 30, 58)).toFixed(1)}px`
       );
     }
 
@@ -283,11 +317,29 @@ class Photos {
 
   /* converge: 1 = far apart, 0 = as close as the countdown brings them
      finale:   0 = countdown layout, 1 = settled gallery */
-  update(t, converge, finale) {
+  update(dt, t, converge, finale) {
     if (!this.items.length) return;
 
     const vw = innerWidth, vh = innerHeight;
     const narrow = this.narrow;
+
+    // Ease each photo toward its spotlight target first, so every photo knows
+    // how far the scene as a whole has dimmed before it sets its own opacity.
+    const k = reduceMotion ? 1 : 1 - Math.exp(-dt / 170);
+    const fk = reduceMotion ? 1 : 1 - Math.exp(-dt / 280);
+    let globalSpot = 0;
+    for (const p of this.items) {
+      p.spot += (p.spotTarget - p.spot) * k;
+      if (Math.abs(p.spotTarget - p.spot) < 0.001) p.spot = p.spotTarget;
+      if (p.spot > globalSpot) globalSpot = p.spot;
+      if (p.revealed && p.fade < 1) {
+        p.fade += (1 - p.fade) * fk;
+        if (p.fade > 0.999) p.fade = 1;
+      }
+    }
+
+    document.documentElement.style.setProperty('--spot', globalSpot.toFixed(3));
+    document.body.classList.toggle('spotlit', globalSpot > 0.01);
 
     // Orbit radii — vertical spread is generous so the clock stays clear.
     const ax = vw * 0.315;
@@ -322,15 +374,44 @@ class Photos {
       const fr = lerp(b1r, b2r, g2);
       const fs = lerp(1.34, narrow ? 1.06 : 1.18, g2);
 
-      const x = lerp(cx, fx, g1);
-      const y = lerp(cy, fy, g1);
-      const r = lerp(cr, fr, g1);
-      const s = lerp(1, fs, g1);
+      let x = lerp(cx, fx, g1);
+      let y = lerp(cy, fy, g1);
+      let r = lerp(cr, fr, g1);
+      let s = lerp(1, fs, g1);
+
+      /* --- spotlight: centre it, level it, and fit it to the viewport ---
+         The growth is applied to the element's layout box rather than to
+         transform: scale(). A composited layer is rasterised at its layout
+         size, so scaling up would just stretch a small texture and look
+         blurry no matter how many pixels the source image has. */
+      let grow = 1;
+      if (p.spot > 0) {
+        const e = smooth(p.spot);
+        const fit = Math.min((vw * 0.9) / (p.w * s), (vh * 0.84) / (p.h * s));
+        grow = lerp(1, fit, e);
+        x = lerp(x, 0, e);
+        y = lerp(y, 0, e);
+        r = lerp(r, 0, e);
+      }
+
+      const tw = p.w * grow, th = p.h * grow;
+      if (tw !== p.lastW || th !== p.lastH) {
+        p.el.style.width = `${tw.toFixed(1)}px`;
+        p.el.style.height = `${th.toFixed(1)}px`;
+        p.lastW = tw;
+        p.lastH = th;
+      }
+
+      p.el.style.zIndex = p.spot > 0 ? '2' : '1';
 
       p.el.style.transform =
         `translate3d(calc(-50% + ${x.toFixed(1)}px), calc(-50% + ${y.toFixed(1)}px), 0) rotate(${r.toFixed(2)}deg) scale(${s.toFixed(3)})`;
 
-      if (finale > 0) p.el.style.opacity = String(lerp(0.82, 1, g1));
+      // Load fade, finale lift and spotlight dimming, resolved in one value.
+      const base = lerp(0.82, 1, g1);
+      const pushedBack = globalSpot * (1 - p.spot);
+      p.el.style.opacity =
+        (p.fade * lerp(base, 1, p.spot) * (1 - pushedBack * 0.82)).toFixed(3);
     }
   }
 }
@@ -591,15 +672,25 @@ function frame(now) {
     : clamp(1 - remaining / IMMINENT_MS, 0, 1);
 
   sky.draw(dt, intensity);
-  photos.update(now, converge, finale);
+  photos.update(dt, now, converge, finale);
 
   requestAnimationFrame(frame);
 }
 
+$('#spot-backdrop').addEventListener('click', () => photos.clearSpot());
+addEventListener('keydown', e => { if (e.key === 'Escape') photos.clearSpot(); });
+
 photos.layout();
 addEventListener('resize', () => photos.layout(), { passive: true });
 // Web font metrics change the measured heights, so recompose once it lands.
-if (document.fonts?.ready) document.fonts.ready.then(() => photos.layout());
+if (document.fonts?.ready) {
+  document.fonts.ready.then(() => {
+    photos.layout();
+    requestAnimationFrame(() => document.body.classList.remove('booting'));
+  });
+} else {
+  requestAnimationFrame(() => document.body.classList.remove('booting'));
+}
 
 fetch('/photos/manifest.json', { cache: 'no-store' })
   .then(r => (r.ok ? r.json() : null))

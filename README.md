@@ -19,10 +19,20 @@ Vercel regenerates the manifest on every build — there is no list of filenames
 The photos drift in the starfield the entire time and are slowly pulled **toward each other** as the
 clock runs down. At 11:11 they come together in the centre, then settle side by side.
 
+**Click or tap any photo** to spotlight it full-screen. Tap it again, tap the backdrop, or press
+Escape to put it back.
+
+> The spotlight grows the photo's actual layout box rather than using `transform: scale()`. A
+> composited layer is rasterised at its layout size, so scaling up would stretch a small texture and
+> look blurry however large the source image is.
+
 ### Link preview
 
 Name one file `og.jpg` (or `og.png`) and it becomes the share-preview image instead of appearing in
 the montage. Otherwise the first photo is used.
+
+The current `og.jpg` is a 1200×630 crop of the Hollywood photo — social cards are 1.91:1, so a
+full-height portrait would get sliced badly by iMessage and most scrapers.
 
 ## Music
 

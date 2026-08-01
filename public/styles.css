@@ -35,6 +35,23 @@ body { position: fixed; inset: 0; }
 
 .photos { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
 
+/* Dims the scene behind a spotlit photo. --spot is driven per frame by app.js
+   so the fade tracks the same easing as the photo's own movement. */
+.spot-backdrop {
+  position: fixed; inset: 0;
+  z-index: 5;
+  background: rgba(3,5,12,.9);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+  opacity: var(--spot, 0);
+  pointer-events: none;
+}
+
+body.spotlit .spot-backdrop { pointer-events: auto; cursor: zoom-out; }
+/* The photos layer must clear the backdrop, since z-index on a child can't
+   escape its parent's stacking context. */
+body.spotlit .photos { z-index: 6; }
+
 /* Width and height are assigned per photo from its intrinsic ratio, so
    landscape and portrait shots keep their real shape at matched visual area. */
 .photo {
@@ -43,8 +60,21 @@ body { position: fixed; inset: 0; }
   margin: 0;
   transform-origin: 50% 50%;
   will-change: transform, opacity;
+  /* No opacity transition: the rAF loop writes opacity every frame and a
+     transition would restart each time, so the fade is eased in JS instead. */
   opacity: 0;
-  transition: opacity .9s ease;
+  pointer-events: auto;
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.photo.spot { cursor: zoom-out; }
+.photo.spot img { filter: none; }
+
+.photo:focus-visible {
+  outline: 2px solid rgba(206,224,255,.85);
+  outline-offset: 7px;
+  border-radius: 12px;
 }
 
 .photo::after {
@@ -199,7 +229,7 @@ body.imminent .colon { animation-duration: 1s; }
   position: fixed;
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
-  z-index: 6;
+  z-index: 7;
   width: 44px; height: 44px;
   display: grid; place-items: center;
   border: 1px solid rgba(190,208,255,.22);
@@ -236,6 +266,9 @@ body.imminent .colon { animation-duration: 1s; }
   0%   { transform: scale(.9);  opacity: .8 }
   100% { transform: scale(1.7); opacity: 0 }
 }
+
+/* The first layout pass sets --names-y; don't animate into it on load. */
+body.booting .names { transition: none; }
 
 @media (max-width: 430px) {
   .clock { gap: 2px; }
