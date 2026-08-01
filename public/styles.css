@@ -166,6 +166,30 @@ body.spotlit .photos { z-index: 6; }
 
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .42 } }
 
+/* Live flight line. Pinned to the top rather than placed in the centred block,
+   so its wrapping never shifts the clock, photos or names. */
+.flight {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + clamp(14px, 3.4vmin, 34px));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(90vw, 46rem);
+  text-align: center;
+  text-wrap: balance;
+  font-size: clamp(10px, 1.55vmin, 14px);
+  letter-spacing: .17em;
+  text-transform: uppercase;
+  color: var(--dim);
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  pointer-events: none;
+}
+
+.flight.show { opacity: .72; }
+/* Recede once the finale takes over — the moment is the point, not the metadata. */
+body.arrived .flight { opacity: .3; }
+
 /* The arrival time that lands when the countdown completes */
 .eleven {
   position: absolute;

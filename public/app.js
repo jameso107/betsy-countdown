@@ -1,13 +1,34 @@
-/* Craig & Betsy — a countdown to 12:26 AM ET, Sunday August 2 2026.
-   Stored as a fixed UTC instant so the clock is correct from any timezone. */
+/* Craig & Betsy — a countdown to Betsy's flight landing.
 
-const REAL_TARGET_MS = Date.UTC(2026, 7, 2, 4, 26, 0); // 2026-08-02T04:26:00Z
+   The target is the flight's live arrival time, refreshed from /api/flight
+   every fifteen minutes and held as a UTC instant so the clock reads correctly
+   from any timezone. When the flight slips, the countdown slips with it. */
+
+// Used until the first live answer arrives, and whenever one can't be had.
+const FALLBACK_TARGET_MS = Date.UTC(2026, 7, 2, 4, 26, 0); // 12:26 AM ET, Sun Aug 2 2026
+const ARRIVAL_TZ = 'America/New_York';
+
+const FLIGHT_POLL_MS = 15 * 60 * 1000;
+// A tab waking from sleep should refresh, but not once per glance.
+const FLIGHT_MIN_GAP_MS = 60 * 1000;
+const FLIGHT_CACHE_KEY = 'cb-arrival';
 
 /* ?preview=20 rehearses the ending twenty seconds from now. */
 const previewIn = Number(new URLSearchParams(location.search).get('preview'));
-const TARGET_MS = Number.isFinite(previewIn) && previewIn !== 0
+const PREVIEW = Number.isFinite(previewIn) && previewIn !== 0;
+
+/* The last live arrival survives a reload, so a dead API or an offline phone
+   still counts to the right moment instead of snapping back to the fallback. */
+function cachedTarget() {
+  try {
+    const v = JSON.parse(localStorage.getItem(FLIGHT_CACHE_KEY) || 'null');
+    return Number.isFinite(v?.ms) ? v.ms : null;
+  } catch { return null; }
+}
+
+let TARGET_MS = PREVIEW
   ? Date.now() + previewIn * 1000
-  : REAL_TARGET_MS;
+  : (cachedTarget() ?? FALLBACK_TARGET_MS);
 
 // How far out the photos begin drifting toward each other.
 const CONVERGE_WINDOW_MS = 12 * 60 * 60 * 1000;
@@ -582,7 +603,9 @@ const els = {
   dHours: $('#d-hours'),
   dMins: $('#d-mins'),
   dSecs: $('#d-secs'),
-  sound: $('#sound')
+  sound: $('#sound'),
+  eleven: $('#eleven'),
+  flight: $('#flight')
 };
 
 function setDigits(node, value) {
@@ -633,6 +656,122 @@ els.sound.addEventListener('click', () => {
 try {
   if (!localStorage.getItem('cb-sound-seen')) els.sound.classList.add('hint');
 } catch { els.sound.classList.add('hint'); }
+
+/* ---------------------------------------------------------------- flight */
+
+const AIRLINES = { G4: 'Allegiant' };
+
+const fmtArrival = new Intl.DateTimeFormat('en-US', {
+  timeZone: ARRIVAL_TZ, hour: 'numeric', minute: '2-digit', hour12: true
+});
+
+/* "12:26 AM" -> ["12:26", "AM"]. Recent ICU puts a narrow no-break space
+   before the meridiem, so normalise it before splitting. */
+function splitArrival(msVal) {
+  const [clock, suffix = ''] = fmtArrival.format(new Date(msVal)).replace(/ /g, ' ').split(' ');
+  return [clock, suffix];
+}
+
+function flightName(code) {
+  const m = /^([A-Z]{1,3}?\d?)(\d{1,4})$/.exec(code || '');
+  if (!m) return code || 'Flight';
+  return `${AIRLINES[m[1]] ? AIRLINES[m[1]] + ' ' : ''}${m[1]} ${m[2]}`;
+}
+
+function minutesText(m) {
+  const h = Math.floor(m / 60);
+  return h ? `${h} hr${m % 60 ? ` ${m % 60} min` : ''}` : `${m} min`;
+}
+
+/* One line of plain language under the sky: what is being waited on, when it
+   lands, and how far that has moved. */
+function statusText(d) {
+  const [clock, suffix] = splitArrival(TARGET_MS);
+  const when = `${clock} ${suffix}`.trim();
+  const name = flightName(d?.flight);
+  const route = d?.route?.from && d?.route?.to ? ` ${d.route.from}–${d.route.to}` : '';
+
+  if (!d || !d.ok) return `${name}${route} · landing ${when} · live updates unavailable`;
+  if (d.arrival?.kind === 'actual') return `${name}${route} · landed ${when}`;
+
+  const late = d.delayMinutes;
+  if (late != null && late >= 5) return `${name}${route} · landing ${when} · ${minutesText(late)} late`;
+  if (late != null && late <= -5) return `${name}${route} · landing ${when} · ${minutesText(-late)} early`;
+  return `${name}${route} · landing ${when}`;
+}
+
+function paintArrival(d) {
+  const [clock] = splitArrival(TARGET_MS);
+  if (els.eleven && els.eleven.textContent !== clock) els.eleven.textContent = clock;
+  if (els.flight && !PREVIEW) {
+    const line = statusText(d);
+    if (els.flight.textContent !== line) els.flight.textContent = line;
+    els.flight.classList.add('show');
+  }
+}
+
+function setTarget(nextMs, d) {
+  const moved = Math.abs(nextMs - TARGET_MS) > 1000;
+  TARGET_MS = nextMs;
+
+  if (moved) {
+    lastShown = -1; // force the digits to redraw against the new target
+
+    /* A later estimate after the finale already played rewinds the page,
+       otherwise a delayed flight would leave it stuck on the ending. */
+    if (arrived && TARGET_MS - Date.now() > 1000) {
+      arrived = false;
+      burstFired = false;
+      document.body.classList.remove('arrived');
+    }
+  }
+
+  paintArrival(d);
+  if (moved) photos.layout(); // the arrival text can change the composed height
+}
+
+let lastFlightFetch = 0;
+let flightInFlight = false;
+
+async function refreshFlight(force = false) {
+  if (PREVIEW || flightInFlight) return;
+  const now = Date.now();
+  if (!force && now - lastFlightFetch < FLIGHT_MIN_GAP_MS) return;
+
+  flightInFlight = true;
+  lastFlightFetch = now;
+  try {
+    const r = await fetch('/api/flight', { cache: 'no-store' });
+    if (!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    const t = Number(d?.arrival?.ms);
+
+    /* Only a genuinely live answer may move the clock. A server-side fallback
+       must not overwrite a good time we already hold. */
+    if (d.ok && Number.isFinite(t)) {
+      try {
+        localStorage.setItem(FLIGHT_CACHE_KEY, JSON.stringify({ ms: t, at: now }));
+      } catch {}
+      setTarget(t, d);
+    } else {
+      paintArrival(d);
+    }
+  } catch {
+    paintArrival(null); // keep counting to whatever we already have
+  } finally {
+    flightInFlight = false;
+  }
+}
+
+// Show the time we already hold; the status line waits for a real answer so it
+// never flashes "unavailable" before the first request has even landed.
+if (els.eleven) els.eleven.textContent = splitArrival(TARGET_MS)[0];
+refreshFlight(true);
+setInterval(() => refreshFlight(true), FLIGHT_POLL_MS);
+// Phones suspend timers when the screen is off; catch up on the way back.
+addEventListener('visibilitychange', () => { if (!document.hidden) refreshFlight(); });
+// Connectivity just came back — retry now rather than waiting out the gap.
+addEventListener('online', () => refreshFlight(true));
 
 let prev = performance.now();
 

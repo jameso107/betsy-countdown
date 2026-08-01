@@ -5,6 +5,6 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-manifest.mjs",
-    "dev": "node scripts/build-manifest.mjs && npx --yes serve public -l 4321"
+    "dev": "node scripts/build-manifest.mjs && node scripts/dev-server.mjs"
   }
 }

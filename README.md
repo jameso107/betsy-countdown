@@ -1,6 +1,9 @@
 # betsy-countdown
 
-A cinematic countdown to **12:26 AM Eastern, Sunday August 2 2026** — for Craig & Betsy.
+A cinematic countdown to Betsy's flight landing — for Craig & Betsy.
+
+The target isn't a fixed time. The page tracks **Allegiant G4 537** and re-checks every 15 minutes,
+so when the flight slips, the countdown slips with it.
 
 Live: https://betsy-countdown.vercel.app
 
@@ -17,7 +20,7 @@ git add public/photos && git commit -m "add photos" && git push
 Vercel regenerates the manifest on every build — there is no list of filenames to maintain.
 
 The photos drift in the starfield the entire time and are slowly pulled **toward each other** as the
-clock runs down. At 12:26 they come together in the centre, then settle side by side.
+clock runs down. On landing they come together in the centre, then settle side by side.
 
 **Click or tap any photo** to spotlight it full-screen. Tap it again, tap the backdrop, or press
 Escape to put it back.
@@ -48,21 +51,54 @@ Browsers block autoplay, so audio starts on the first tap of the speaker button 
 npm run dev
 ```
 
-Serves on http://localhost:4321.
+Serves on http://localhost:4321, including `/api/flight` — plain static hosting can't run the
+function, so this uses a small Node server instead of `serve`.
+
+To exercise the live-retargeting path without an API key, fake an arrival:
+
+```bash
+MOCK_FLIGHT=+90m npm run dev          # lands 90 minutes from now
+MOCK_FLIGHT=2026-08-02T04:26:00Z npm run dev
+```
 
 ## Rehearsing the ending
 
 Append `?preview=N` to watch the finale play out `N` seconds from load, without waiting for the
 real time — `https://betsy-countdown.vercel.app/?preview=5`. Remove it for the real countdown.
 
-## Changing the target time
+## The flight
 
-One line, [`public/app.js`](public/app.js) — stored as a fixed UTC instant so the clock reads
-correctly from any timezone.
+[`api/flight.js`](api/flight.js) is a serverless function that asks a flight-data provider when
+G4 537 is now expected, and normalises the answer. The page polls it every 15 minutes, on becoming
+visible again, and whenever the network comes back.
 
-```js
-const REAL_TARGET_MS = Date.UTC(2026, 7, 2, 4, 26, 0); // 12:26 AM EDT, Sun Aug 2 2026
-```
+**It needs an API key to go live.** Set exactly one of these in the Vercel project
+(Settings → Environment Variables), then redeploy:
 
-The matching `#eleven` element in [`public/index.html`](public/index.html) prints the time that
-lands when the clock hits zero — change it to match.
+| Variable | Provider | Notes |
+| --- | --- | --- |
+| `AERODATABOX_KEY` | [AeroDataBox](https://rapidapi.com/aedbx-aedbx/api/aerodatabox) via RapidAPI | Best delay data of the three; queries by flight number and date |
+| `AVIATIONSTACK_KEY` | [Aviationstack](https://aviationstack.com/) | Free tier is ~100 calls/month — thin, but enough for one night |
+| `AIRLABS_KEY` | [AirLabs](https://airlabs.co/docs/flight) | |
+
+Optional:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `FLIGHT_NUMBER` | `G4537` | IATA flight code, no space |
+| `FLIGHT_ARRIVAL_IATA` | *(unset)* | Destination filter, e.g. `GRR`. Worth setting — G4 537 is flown on several routes, so the number alone can match more than one leg |
+| `FLIGHT_TZ` | `America/New_York` | Timezone the arrival date is resolved in |
+| `FALLBACK_ARRIVAL_ISO` | `2026-08-02T04:26:00Z` | Used when no live answer is available |
+
+### When the data isn't there
+
+The countdown never blanks or breaks. With no key, a provider outage, or no matching flight, the
+function still answers `200` with the fallback time and `ok: false`, and the page keeps counting to
+the last live time it saw — cached in `localStorage`, so it survives a reload on a dead network. The
+status line says `live updates unavailable` when the time on screen isn't fresh.
+
+Responses are cached at the edge for 5 minutes (60s for failures), so a hundred open tabs cost one
+upstream call, not a hundred — free tiers are metered in the low hundreds per month.
+
+If the flight is delayed *after* the countdown has already hit zero and played the finale, the page
+rewinds itself and resumes counting.
