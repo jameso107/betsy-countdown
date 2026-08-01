@@ -1,0 +1,613 @@
+/* Craig & Betsy — a countdown to 11:11 PM ET, Saturday August 1 2026.
+   Stored as a fixed UTC instant so the clock is correct from any timezone. */
+
+const REAL_TARGET_MS = Date.UTC(2026, 7, 2, 3, 11, 0); // 2026-08-02T03:11:00Z
+
+/* ?preview=20 rehearses the ending twenty seconds from now. */
+const previewIn = Number(new URLSearchParams(location.search).get('preview'));
+const TARGET_MS = Number.isFinite(previewIn) && previewIn !== 0
+  ? Date.now() + previewIn * 1000
+  : REAL_TARGET_MS;
+
+// How far out the photos begin drifting toward each other.
+const CONVERGE_WINDOW_MS = 12 * 60 * 60 * 1000;
+// Length of the finale animation once the clock lands.
+const FINALE_MS = 5200;
+const IMMINENT_MS = 10 * 1000;
+
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const smooth = t => t * t * (3 - 2 * t);
+const norm = (v, a, b) => clamp((v - a) / (b - a), 0, 1);
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const $ = sel => document.querySelector(sel);
+
+/* ------------------------------------------------------------------ sky */
+
+class Sky {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.stars = [];
+    this.shooting = [];
+    this.nextShot = 3000;
+    this.resize();
+    addEventListener('resize', () => this.resize(), { passive: true });
+  }
+
+  resize() {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    this.w = innerWidth;
+    this.h = innerHeight;
+    this.cv.width = Math.round(this.w * dpr);
+    this.cv.height = Math.round(this.h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.seed();
+  }
+
+  seed() {
+    const count = clamp(Math.round((this.w * this.h) / 2600), 140, 620);
+    this.stars = Array.from({ length: count }, () => {
+      // A few bright foreground stars, mostly faint distant ones.
+      const depth = Math.random();
+      return {
+        x: Math.random() * this.w,
+        y: Math.random() * this.h,
+        r: lerp(0.35, 1.5, Math.pow(depth, 2.2)),
+        a: lerp(0.18, 0.92, Math.pow(depth, 1.5)),
+        tw: Math.random() * Math.PI * 2,
+        tws: lerp(0.25, 1.5, Math.random()),
+        vx: lerp(0.7, 3.4, depth) * 0.0035,
+        vy: lerp(0.7, 3.4, depth) * 0.0012,
+        warm: Math.random() < 0.16
+      };
+    });
+  }
+
+  burst(n = 4) {
+    for (let i = 0; i < n; i++) this.spawnShot(true);
+  }
+
+  spawnShot(fast = false) {
+    const fromLeft = Math.random() < 0.5;
+    this.shooting.push({
+      x: fromLeft ? -60 : this.w + 60,
+      y: Math.random() * this.h * 0.66,
+      vx: (fromLeft ? 1 : -1) * lerp(0.42, 0.78, Math.random()) * (fast ? 1.5 : 1),
+      vy: lerp(0.12, 0.3, Math.random()) * (fast ? 1.5 : 1),
+      life: 0,
+      max: lerp(620, 1100, Math.random())
+    });
+  }
+
+  draw(dt, intensity) {
+    const { ctx, w, h } = this;
+    ctx.fillStyle = '#04060f';
+    ctx.fillRect(0, 0, w, h);
+
+    const speed = reduceMotion ? 0 : 1 + intensity * 2.2;
+
+    for (const s of this.stars) {
+      s.tw += s.tws * dt * 0.0016;
+      s.x += s.vx * dt * 0.06 * speed;
+      s.y += s.vy * dt * 0.06 * speed;
+      if (s.x > w + 4) s.x = -4;
+      if (s.y > h + 4) s.y = -4;
+
+      const a = clamp(s.a * (0.62 + 0.38 * Math.sin(s.tw)) * (1 + intensity * 0.45), 0, 1);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = s.warm
+        ? `rgba(255,232,196,${a})`
+        : `rgba(214,228,255,${a})`;
+      ctx.fill();
+    }
+
+    if (!reduceMotion) {
+      this.nextShot -= dt;
+      if (this.nextShot <= 0) {
+        this.spawnShot();
+        this.nextShot = lerp(7000, 20000, Math.random()) / (1 + intensity * 3);
+      }
+    }
+
+    for (let i = this.shooting.length - 1; i >= 0; i--) {
+      const m = this.shooting[i];
+      m.life += dt;
+      if (m.life > m.max) { this.shooting.splice(i, 1); continue; }
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+
+      const fade = Math.sin((m.life / m.max) * Math.PI);
+      const len = 130;
+      const g = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * len, m.y - m.vy * len);
+      g.addColorStop(0, `rgba(255,255,255,${0.85 * fade})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(m.x - m.vx * len, m.y - m.vy * len);
+      ctx.stroke();
+    }
+  }
+}
+
+/* --------------------------------------------------------------- photos */
+
+class Photos {
+  constructor(root) {
+    this.root = root;
+    this.items = [];
+  }
+
+  load(entries) {
+    const n = entries.length;
+    if (!n) return;
+
+    entries.forEach((entry, i) => {
+      const fig = document.createElement('figure');
+      fig.className = 'photo';
+      const img = document.createElement('img');
+      img.src = entry.src;
+      img.alt = '';
+      img.decoding = 'async';
+      img.loading = 'eager';
+      fig.appendChild(img);
+      this.root.appendChild(fig);
+
+      // Even distribution, offset so four photos land on the diagonals
+      // and leave the centre band clear for the clock.
+      const angle = (i / n) * Math.PI * 2 + Math.PI / 4;
+
+      const item = {
+        el: fig,
+        angle,
+        ratio: entry.w && entry.h ? entry.w / entry.h : 1,
+        tilt: lerp(-7, 7, i / Math.max(1, n - 1)) + (Math.random() * 2 - 1),
+        phase: Math.random() * Math.PI * 2,
+        bobSpeed: lerp(0.28, 0.5, Math.random()),
+        index: i,
+        total: n
+      };
+      this.items.push(item);
+
+      const reveal = () => requestAnimationFrame(() => { fig.style.opacity = '0.82'; });
+      if (img.complete) reveal();
+      else img.addEventListener('load', reveal, { once: true });
+
+      // Formats the build step can't measure get sized once decoded.
+      if (!entry.w || !entry.h) {
+        img.addEventListener('load', () => {
+          if (img.naturalWidth && img.naturalHeight) {
+            item.ratio = img.naturalWidth / img.naturalHeight;
+            this.layout();
+          }
+        }, { once: true });
+      }
+
+      img.addEventListener('error', () => {
+        fig.remove();
+        this.items = this.items.filter(p => p !== item);
+        this.layout();
+      }, { once: true });
+    });
+
+    this.layout();
+  }
+
+  /* Sizes every photo to equal visual area, then precomputes the settled
+     gallery positions the finale eases into. */
+  layout() {
+    const items = this.items;
+
+    const vw = innerWidth, vh = innerHeight;
+    const vmin = Math.min(vw, vh);
+    this.narrow = vw < 820;
+
+    if (!items.length) { this.compose(0, vmin); return; }
+
+    // Nominal square side; each photo trades width for height around it.
+    const base = clamp(vmin * (this.narrow ? 0.20 : 0.175), 92, 196);
+
+    for (const p of items) {
+      const r = Math.sqrt(clamp(p.ratio, 0.5, 2));
+      p.w = base * r;
+      p.h = base / r;
+      p.el.style.width = `${p.w.toFixed(1)}px`;
+      p.el.style.height = `${p.h.toFixed(1)}px`;
+    }
+
+    // Settled arrangement: one row when there's room, otherwise a grid.
+    const cols = this.narrow ? Math.min(2, items.length) : items.length;
+    const gap = this.narrow ? vmin * 0.035 : vmin * 0.05;
+    const rows = [];
+    for (let i = 0; i < items.length; i += cols) rows.push(items.slice(i, i + cols));
+
+    // Photos are scaled up in the settled state; the block must allow for it.
+    const fs = this.narrow ? 1.06 : 1.18;
+    const rowHeights = rows.map(r => Math.max(...r.map(p => p.h)) * fs);
+    const gridH = rowHeights.reduce((a, b) => a + b, 0) + gap * (rows.length - 1);
+
+    const gridTop = this.compose(gridH, vmin);
+
+    let y = gridTop;
+    rows.forEach((row, ri) => {
+      const rowW = row.reduce((a, p) => a + p.w * fs, 0) + gap * (row.length - 1);
+      let x = -rowW / 2;
+      const cy = y + rowHeights[ri] / 2;
+      for (const p of row) {
+        p.b2x = x + (p.w * fs) / 2;
+        p.b2y = cy;
+        x += p.w * fs + gap;
+      }
+      y += rowHeights[ri] + gap;
+    });
+  }
+
+  /* Stacks 11:11, the photo grid and the names into one vertically centred
+     block, so the time is never hidden behind a photo. Returns the y the
+     photo grid should start at, relative to the viewport centre. */
+  compose(gridH, vmin) {
+    const eleven = $('#eleven');
+    const names = $('.names');
+    const clockEl = $('#clock');
+
+    const elevenH = eleven ? eleven.offsetHeight : 0;
+    const namesH = names ? names.offsetHeight : 0;
+    const vGap = clamp(vmin * 0.05, 18, 54);
+    const lowerGap = vGap * 0.85;
+
+    const blockH = elevenH + vGap + gridH + lowerGap + namesH;
+    const top = -blockH / 2;
+    const gridTop = top + elevenH + vGap;
+
+    const root = document.documentElement;
+    root.style.setProperty('--eleven-y', `${(top + elevenH / 2).toFixed(1)}px`);
+    root.style.setProperty('--names-final-y', `${(gridTop + gridH + lowerGap + namesH / 2).toFixed(1)}px`);
+
+    // Countdown state: names tuck just under the clock.
+    if (clockEl) {
+      root.style.setProperty(
+        '--names-y',
+        `${(clockEl.offsetHeight / 2 + clamp(vmin * 0.05, 22, 48)).toFixed(1)}px`
+      );
+    }
+
+    return gridTop;
+  }
+
+  /* converge: 1 = far apart, 0 = as close as the countdown brings them
+     finale:   0 = countdown layout, 1 = settled gallery */
+  update(t, converge, finale) {
+    if (!this.items.length) return;
+
+    const vw = innerWidth, vh = innerHeight;
+    const narrow = this.narrow;
+
+    // Orbit radii — vertical spread is generous so the clock stays clear.
+    const ax = vw * 0.315;
+    const ay = vh * (narrow ? 0.30 : 0.335);
+    const f = 0.70 + 0.30 * converge;
+
+    for (const p of this.items) {
+      const bob = reduceMotion ? 0 : Math.sin(t * 0.001 * p.bobSpeed + p.phase);
+      const sway = reduceMotion ? 0 : Math.cos(t * 0.00072 * p.bobSpeed + p.phase);
+
+      // --- countdown position ---
+      const cx = Math.cos(p.angle) * ax * f + sway * 12;
+      const cy = Math.sin(p.angle) * ay * f + bob * 14;
+      const cr = p.tilt + sway * 1.6;
+
+      // --- finale beat one: pulled into an overlapping cluster ---
+      const spread = (p.index - (p.total - 1) / 2);
+      const b1x = spread * 16;
+      const b1y = bob * 4;
+      const b1r = spread * 7;
+
+      // --- finale beat two: the settled gallery computed in layout() ---
+      const b2x = p.b2x;
+      const b2y = p.b2y;
+      const b2r = spread * 2.4;
+
+      const g1 = smooth(norm(finale, 0, 0.38));   // drift into the cluster
+      const g2 = smooth(norm(finale, 0.46, 1));   // settle outward
+
+      const fx = lerp(b1x, b2x, g2);
+      const fy = lerp(b1y, b2y, g2);
+      const fr = lerp(b1r, b2r, g2);
+      const fs = lerp(1.34, narrow ? 1.06 : 1.18, g2);
+
+      const x = lerp(cx, fx, g1);
+      const y = lerp(cy, fy, g1);
+      const r = lerp(cr, fr, g1);
+      const s = lerp(1, fs, g1);
+
+      p.el.style.transform =
+        `translate3d(calc(-50% + ${x.toFixed(1)}px), calc(-50% + ${y.toFixed(1)}px), 0) rotate(${r.toFixed(2)}deg) scale(${s.toFixed(3)})`;
+
+      if (finale > 0) p.el.style.opacity = String(lerp(0.82, 1, g1));
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- audio */
+
+class Ambience {
+  constructor(src) {
+    this.src = src;
+    this.on = false;
+    this.ctx = null;
+    this.nodes = [];
+  }
+
+  toggle() { return this.on ? (this.stop(), false) : (this.start(), true); }
+
+  start() {
+    this.on = true;
+    if (this.src) return this.startFile();
+    this.startSynth();
+  }
+
+  startFile() {
+    if (!this.audio) {
+      this.audio = new Audio(this.src);
+      this.audio.loop = true;
+      this.audio.volume = 0;
+    }
+    this.audio.play().then(() => this.fadeTo(0.55, 3000)).catch(() => {
+      // Autoplay or decode failure — fall back to the generated pad.
+      this.src = null;
+      this.audio = null;
+      if (this.on) this.startSynth();
+    });
+  }
+
+  fadeTo(target, ms) {
+    const a = this.audio;
+    if (!a) return;
+    const from = a.volume, t0 = performance.now();
+    const step = now => {
+      const k = clamp((now - t0) / ms, 0, 1);
+      a.volume = clamp(lerp(from, target, k), 0, 1);
+      if (k < 1 && this.audio === a) requestAnimationFrame(step);
+      else if (target === 0 && this.audio === a) a.pause();
+    };
+    requestAnimationFrame(step);
+  }
+
+  /* A slow, generated pad — means the page has music even with no audio file. */
+  startSynth() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = this.ctx || (this.ctx = new AC());
+    ctx.resume();
+
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 5);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1150;
+    filter.Q.value = 0.6;
+
+    const verb = ctx.createConvolver();
+    verb.buffer = this.impulse(ctx, 3.4, 2.6);
+    const wet = ctx.createGain(); wet.gain.value = 0.55;
+    const dry = ctx.createGain(); dry.gain.value = 0.62;
+
+    filter.connect(dry).connect(master);
+    filter.connect(verb).connect(wet).connect(master);
+    master.connect(ctx.destination);
+
+    // Amaj9-ish, voiced wide and low.
+    const chord = [110.0, 164.81, 220.0, 277.18, 329.63, 415.30];
+    chord.forEach((hz, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = i < 2 ? 'sine' : 'triangle';
+      osc.frequency.value = hz;
+      osc.detune.value = (Math.random() * 2 - 1) * 7;
+
+      const g = ctx.createGain();
+      g.gain.value = 0.0001;
+
+      // Each voice breathes on its own slow cycle.
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.026 + Math.random() * 0.05;
+      const lfoAmt = ctx.createGain();
+      lfoAmt.gain.value = 0.5 / chord.length;
+      lfo.connect(lfoAmt).connect(g.gain);
+      g.gain.setValueAtTime(0.55 / chord.length, ctx.currentTime);
+
+      osc.connect(g).connect(filter);
+      osc.start(); lfo.start();
+      this.nodes.push(osc, lfo);
+    });
+
+    this.master = master;
+  }
+
+  impulse(ctx, seconds, decay) {
+    const rate = ctx.sampleRate;
+    const len = Math.floor(rate * seconds);
+    const buf = ctx.createBuffer(2, len, rate);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < len; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buf;
+  }
+
+  /* A rising shimmer for the moment the clock lands. */
+  swell() {
+    if (!this.on) return;
+    // With a music file playing there's no synth context yet — make one so the
+    // chime still lands.
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+    }
+    const ctx = this.ctx;
+    ctx.resume();
+    const now = ctx.currentTime;
+    [880, 1108.73, 1318.51, 1760].forEach((hz, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = hz;
+      const g = ctx.createGain();
+      const at = now + i * 0.34;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.10, at + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 4.2);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 4.4);
+    });
+  }
+
+  stop() {
+    this.on = false;
+    if (this.audio) return this.fadeTo(0, 900);
+    if (this.master && this.ctx) {
+      const t = this.ctx.currentTime;
+      this.master.gain.cancelScheduledValues(t);
+      this.master.gain.setValueAtTime(this.master.gain.value, t);
+      this.master.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+      const nodes = this.nodes.splice(0);
+      setTimeout(() => nodes.forEach(n => { try { n.stop(); } catch {} }), 1400);
+      this.master = null;
+    }
+  }
+}
+
+/* ----------------------------------------------------------------- boot */
+
+const sky = new Sky($('#sky'));
+const photos = new Photos($('#photos'));
+
+const els = {
+  clock: $('#clock'),
+  days: $('#u-days'),
+  daysColon: $('#c-days'),
+  dDays: $('#u-days .digits'),
+  dHours: $('#d-hours'),
+  dMins: $('#d-mins'),
+  dSecs: $('#d-secs'),
+  sound: $('#sound')
+};
+
+function setDigits(node, value) {
+  const s = String(value).padStart(2, '0');
+  const spans = node.children;
+  for (let i = 0; i < spans.length; i++) {
+    if (spans[i].textContent !== s[i]) spans[i].textContent = s[i];
+  }
+}
+
+let lastShown = -1;
+function renderClock(remaining) {
+  const total = Math.max(0, Math.ceil(remaining / 1000));
+  if (total === lastShown) return;
+  lastShown = total;
+
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor(total / 3600) % 24;
+
+  if (days > 0) {
+    els.days.hidden = false;
+    els.daysColon.hidden = false;
+    setDigits(els.dDays, days);
+  } else if (!els.days.hidden) {
+    els.days.hidden = true;
+    els.daysColon.hidden = true;
+  }
+
+  setDigits(els.dHours, days > 0 ? hours : Math.floor(total / 3600));
+  setDigits(els.dMins, Math.floor(total / 60) % 60);
+  setDigits(els.dSecs, total % 60);
+
+  document.title = total > 0 ? `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')} — Craig & Betsy` : 'Craig & Betsy';
+}
+
+let ambience = new Ambience(null);
+let arrived = false;
+let burstFired = false;
+
+els.sound.addEventListener('click', () => {
+  const on = ambience.toggle();
+  els.sound.setAttribute('aria-pressed', String(on));
+  els.sound.setAttribute('aria-label', on ? 'Turn sound off' : 'Turn sound on');
+  els.sound.classList.remove('hint');
+  try { localStorage.setItem('cb-sound-seen', '1'); } catch {}
+});
+
+try {
+  if (!localStorage.getItem('cb-sound-seen')) els.sound.classList.add('hint');
+} catch { els.sound.classList.add('hint'); }
+
+let prev = performance.now();
+
+function frame(now) {
+  const dt = Math.min(now - prev, 60);
+  prev = now;
+
+  const remaining = TARGET_MS - Date.now();
+  const since = -remaining;
+
+  if (remaining > 0) {
+    renderClock(remaining);
+    document.body.classList.toggle('imminent', remaining <= IMMINENT_MS);
+  } else if (!arrived) {
+    arrived = true;
+    renderClock(0);
+    document.body.classList.remove('imminent');
+    document.body.classList.add('arrived');
+    ambience.swell();
+  }
+
+  if (arrived && !burstFired && since > 300) {
+    burstFired = true;
+    sky.burst(5);
+  }
+
+  // 1 = far apart, 0 = fully drawn together.
+  const converge = remaining > 0
+    ? Math.pow(clamp(remaining / CONVERGE_WINDOW_MS, 0, 1), 0.25)
+    : 0;
+
+  const finale = arrived ? easeOut(clamp(since / FINALE_MS, 0, 1)) : 0;
+
+  // Sky brightens through the last ten seconds and stays lifted afterwards.
+  const intensity = arrived
+    ? lerp(1, 0.45, clamp(since / (FINALE_MS * 1.6), 0, 1))
+    : clamp(1 - remaining / IMMINENT_MS, 0, 1);
+
+  sky.draw(dt, intensity);
+  photos.update(now, converge, finale);
+
+  requestAnimationFrame(frame);
+}
+
+photos.layout();
+addEventListener('resize', () => photos.layout(), { passive: true });
+// Web font metrics change the measured heights, so recompose once it lands.
+if (document.fonts?.ready) document.fonts.ready.then(() => photos.layout());
+
+fetch('/photos/manifest.json', { cache: 'no-store' })
+  .then(r => (r.ok ? r.json() : null))
+  .then(m => {
+    if (m && Array.isArray(m.photos)) {
+      photos.load(m.photos.map(p => (typeof p === 'string' ? { src: p } : p)));
+    }
+    ambience = new Ambience(m && m.audio ? m.audio : null);
+  })
+  .catch(() => {})
+  .finally(() => requestAnimationFrame(frame));

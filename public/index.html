@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Craig &amp; Betsy</title>
+<meta name="theme-color" content="#04060f">
+<meta property="og:title" content="Craig &amp; Betsy">
+<meta property="og:type" content="website">
+<meta property="og:image" content="/photos/1-lake.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>✨</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<canvas id="sky"></canvas>
+<div class="haze" aria-hidden="true"></div>
+
+<div id="photos" class="photos" aria-hidden="true"></div>
+
+<main class="stage">
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div id="clock" class="clock" role="timer" aria-live="off">
+    <div class="unit" id="u-days" hidden>
+      <div class="digits"><span>0</span><span>0</span></div>
+      <div class="label">days</div>
+    </div>
+    <div class="colon" id="c-days" hidden>:</div>
+
+    <div class="unit">
+      <div class="digits" id="d-hours"><span>0</span><span>0</span></div>
+      <div class="label">hours</div>
+    </div>
+    <div class="colon">:</div>
+
+    <div class="unit">
+      <div class="digits" id="d-mins"><span>0</span><span>0</span></div>
+      <div class="label">minutes</div>
+    </div>
+    <div class="colon">:</div>
+
+    <div class="unit">
+      <div class="digits" id="d-secs"><span>0</span><span>0</span></div>
+      <div class="label">seconds</div>
+    </div>
+  </div>
+
+  <div id="eleven" class="eleven" aria-hidden="true">11:11</div>
+
+  <h1 class="names">Craig <em>&amp;</em> Betsy</h1>
+</main>
+
+<button id="sound" class="sound" type="button" aria-label="Turn sound on" aria-pressed="false">
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path class="spk" d="M4 9.5h3.2L12 5.6v12.8L7.2 14.5H4z"/>
+    <g class="waves"><path d="M15.4 9.2a4 4 0 0 1 0 5.6"/><path d="M17.8 6.9a7.4 7.4 0 0 1 0 10.2"/></g>
+    <path class="slash" d="M4.5 4.5l15 15"/>
+  </svg>
+</button>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "photos": [
+    {
+      "src": "/photos/1-lake.jpg",
+      "w": 1600,
+      "h": 973
+    },
+    {
+      "src": "/photos/2-frozen.jpg",
+      "w": 1066,
+      "h": 1600
+    },
+    {
+      "src": "/photos/3-family.jpg",
+      "w": 1200,
+      "h": 1600
+    },
+    {
+      "src": "/photos/4-hollywood.jpg",
+      "w": 1200,
+      "h": 1600
+    }
+  ],
+  "audio": null
+}

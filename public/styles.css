@@ -1,0 +1,249 @@
+:root {
+  --ink: #eef2ff;
+  --dim: #9fb0d8;
+  --gold: #f0d9a8;
+  --bg: #04060f;
+  --glow: 0 0 28px rgba(160,190,255,.30), 0 0 70px rgba(120,150,255,.16);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Cormorant Garamond", "Iowan Old Style", Palatino, Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body { position: fixed; inset: 0; }
+
+#sky { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* Deep-space colour wash sitting over the starfield */
+.haze {
+  position: fixed; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(58vmax 42vmax at 18% 12%, rgba(72,86,190,.20), transparent 62%),
+    radial-gradient(52vmax 40vmax at 84% 82%, rgba(150,84,170,.16), transparent 64%),
+    radial-gradient(70vmax 56vmax at 50% 108%, rgba(28,44,120,.30), transparent 70%);
+}
+
+/* ---------- photos ---------- */
+
+.photos { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+
+/* Width and height are assigned per photo from its intrinsic ratio, so
+   landscape and portrait shots keep their real shape at matched visual area. */
+.photo {
+  position: absolute;
+  top: 50%; left: 50%;
+  margin: 0;
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+  opacity: 0;
+  transition: opacity .9s ease;
+}
+
+.photo::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(214,228,255,.34);
+  pointer-events: none;
+}
+
+.photo, .photo img { border-radius: 10px; }
+
+.photo img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(.92) brightness(.94);
+  box-shadow:
+    0 0 0 5px rgba(9,13,28,.55),
+    0 0 34px rgba(120,160,255,.24),
+    0 22px 54px rgba(0,0,0,.62);
+}
+
+/* ---------- centre stage ---------- */
+
+/* Clock, 11:11 and names are all absolutely centred and offset by CSS vars
+   that app.js computes, so nothing reflows when the finale rearranges. */
+.stage {
+  position: fixed; inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Keeps the clock legible where photos drift behind it */
+.scrim {
+  position: absolute; inset: 0;
+  background: radial-gradient(46vmax 26vmax at 50% 46%, rgba(4,6,15,.86), rgba(4,6,15,.42) 46%, transparent 72%);
+}
+
+/* display:flex on .unit/.colon would otherwise beat the hidden attribute */
+[hidden] { display: none !important; }
+
+.clock {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex; align-items: flex-start; justify-content: center;
+  gap: clamp(6px, 1.5vmin, 18px);
+  font-weight: 300;
+  line-height: 1;
+  transition: opacity .9s ease, transform .9s cubic-bezier(.4,0,.2,1), filter .9s ease;
+}
+
+.unit { display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 1.6vmin, 18px); }
+
+.digits {
+  display: flex;
+  font-size: clamp(52px, 15.5vmin, 168px);
+  text-shadow: var(--glow);
+  color: #f6f8ff;
+}
+
+/* Fixed-advance digits so the clock never twitches between frames */
+.digits span {
+  display: inline-block;
+  width: .60em;
+  text-align: center;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.label {
+  font-size: clamp(8px, 1.35vmin, 12px);
+  letter-spacing: .42em;
+  text-indent: .42em;
+  text-transform: uppercase;
+  color: var(--dim);
+  opacity: .78;
+  font-family: ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-weight: 400;
+}
+
+.colon {
+  font-size: clamp(46px, 13vmin, 148px);
+  color: rgba(214,226,255,.62);
+  line-height: 1.02;
+  text-shadow: 0 0 18px rgba(150,180,255,.28);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .42 } }
+
+/* The 11:11 that lands when the countdown completes */
+.eleven {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) translateY(var(--eleven-y, 0px)) scale(.9);
+  font-size: clamp(52px, 13vmin, 150px);
+  font-weight: 300;
+  letter-spacing: .02em;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: #fff;
+  text-shadow: 0 0 34px rgba(190,215,255,.62), 0 0 100px rgba(140,175,255,.42), 0 0 190px rgba(120,150,255,.26);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.4s ease, transform 1.6s cubic-bezier(.16,1,.3,1);
+}
+
+.names {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) translateY(var(--names-y, 130px));
+  font-size: clamp(15px, 2.5vmin, 27px);
+  font-weight: 300;
+  letter-spacing: .52em;
+  text-indent: .52em;
+  text-transform: uppercase;
+  color: #dfe7ff;
+  text-shadow: 0 0 22px rgba(150,180,255,.34);
+  white-space: nowrap;
+  transition: opacity 1.2s ease, letter-spacing 2.4s cubic-bezier(.16,1,.3,1),
+              text-shadow 1.2s ease, transform 1.6s cubic-bezier(.16,1,.3,1);
+}
+
+.names em {
+  font-style: italic;
+  font-size: 1.16em;
+  letter-spacing: 0;
+  color: var(--gold);
+  text-shadow: 0 0 24px rgba(240,215,168,.42);
+}
+
+/* ---------- states ---------- */
+
+body.arrived .clock { opacity: 0; transform: translate(-50%, -50%) scale(.86); filter: blur(6px); pointer-events: none; }
+body.arrived .eleven { opacity: 1; transform: translate(-50%, -50%) translateY(var(--eleven-y, 0px)) scale(1); }
+body.arrived .scrim { opacity: .55; transition: opacity 2s ease; }
+body.arrived .names {
+  transform: translate(-50%, -50%) translateY(var(--names-final-y, 190px));
+  letter-spacing: .74em; text-indent: .74em;
+  text-shadow: 0 0 30px rgba(190,210,255,.58);
+}
+body.arrived .photos { z-index: 4; }
+body.arrived .photo img { filter: none; }
+
+/* Final ten seconds */
+body.imminent .digits { text-shadow: 0 0 40px rgba(190,215,255,.62), 0 0 110px rgba(130,165,255,.34); }
+body.imminent .colon { animation-duration: 1s; }
+
+/* ---------- sound toggle ---------- */
+
+.sound {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 6;
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  border: 1px solid rgba(190,208,255,.22);
+  border-radius: 50%;
+  background: rgba(10,14,30,.5);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #cfdcff;
+  cursor: pointer;
+  opacity: .5;
+  transition: opacity .3s ease, border-color .3s ease, transform .3s ease;
+}
+
+.sound:hover, .sound:focus-visible { opacity: 1; border-color: rgba(190,208,255,.5); transform: scale(1.06); }
+.sound svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.sound .spk { fill: currentColor; stroke-width: 1.2; }
+.sound .waves { opacity: 0; transition: opacity .3s ease; }
+.sound .slash { opacity: .95; transition: opacity .3s ease; }
+.sound[aria-pressed="true"] { opacity: .95; }
+.sound[aria-pressed="true"] .waves { opacity: 1; }
+.sound[aria-pressed="true"] .slash { opacity: 0; }
+.sound[hidden] { display: none; }
+
+/* Draws the eye to the toggle until it's used once */
+.sound.hint::before {
+  content: "";
+  position: absolute; inset: -5px;
+  border-radius: 50%;
+  border: 1px solid rgba(190,208,255,.5);
+  animation: ripple 2.6s ease-out infinite;
+}
+
+@keyframes ripple {
+  0%   { transform: scale(.9);  opacity: .8 }
+  100% { transform: scale(1.7); opacity: 0 }
+}
+
+@media (max-width: 430px) {
+  .clock { gap: 2px; }
+  .names { letter-spacing: .36em; text-indent: .36em; }
+  body.arrived .names { letter-spacing: .52em; text-indent: .52em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .colon, .sound.hint::before { animation: none; }
+  .photo, .clock, .eleven, .names { transition-duration: .01ms; }
+}
